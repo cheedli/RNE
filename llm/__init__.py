@@ -2,7 +2,7 @@
 LLM package for RNE Chatbot.
 """
 
-from llm.groq_client import GroqClient
+from llm.openai_client import OpenAIClient
 from llm.prompt_templates import (
     SYSTEM_PROMPT_FR,
     SYSTEM_PROMPT_AR,
@@ -13,7 +13,7 @@ from llm.prompt_templates import (
 )
 
 __all__ = [
-    'GroqClient',
+    'OpenAIClient',
     'SYSTEM_PROMPT_FR',
     'SYSTEM_PROMPT_AR',
     'QUESTION_SEGMENTATION_PROMPT',

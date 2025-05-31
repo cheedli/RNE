@@ -9,8 +9,8 @@ from dotenv import load_dotenv
 load_dotenv()
 
 # Groq API settings
-GROQ_API_KEY = os.getenv("GROQ_API_KEY")
-LLM_MODEL = "llama-3.3-70b-versatile"
+OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
+LLM_MODEL = "gpt-3.5-turbo"
 
 # Retrieval settings
 FAISS_WEIGHT = 0.5  # Weight for FAISS retrieval (semantic search)

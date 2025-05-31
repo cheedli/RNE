@@ -1,29 +1,29 @@
 """
-Integration with Groq API for LLM capabilities.
+Integration with OpenAI API for LLM capabilities.
 """
 
-import groq
+import openai
 import json
 from typing import Dict, List, Any, Optional
 
 import sys
 sys.path.append('..')
-from config import GROQ_API_KEY, LLM_MODEL, SYSTEM_PROMPT, MAX_CONTEXT_LENGTH
+from config import OPENAI_API_KEY, LLM_MODEL, SYSTEM_PROMPT, MAX_CONTEXT_LENGTH
 
-class GroqClient:
+class OpenAIClient:
     """
-    Client for interacting with Groq's LLM API.
+    Client for interacting with OpenAI's LLM API.
     """
     
-    def __init__(self, api_key: str = GROQ_API_KEY, model: str = LLM_MODEL):
+    def __init__(self, api_key: str = OPENAI_API_KEY, model: str = LLM_MODEL):
         """
-        Initialize the Groq client.
+        Initialize the OpenAI client.
         
         Args:
-            api_key: Groq API key.
-            model: Model identifier to use.
+            api_key: OpenAI API key.
+            model: Model identifier to use (e.g., 'gpt-4', 'gpt-3.5-turbo').
         """
-        self.client = groq.Client(api_key=api_key)
+        self.client = openai.OpenAI(api_key=api_key)
         self.model = model
         self.system_prompt = SYSTEM_PROMPT
         
@@ -35,7 +35,7 @@ class GroqClient:
         system_prompt: Optional[str] = None
     ) -> str:
         """
-        Generate a response using the Groq LLM.
+        Generate a response using the OpenAI LLM.
         
         Args:
             query: User query.
@@ -62,7 +62,7 @@ class GroqClient:
         ]
         
         try:
-            # Call the Groq API
+            # Call the OpenAI API
             completion = self.client.chat.completions.create(
                 model=self.model,
                 messages=messages,
@@ -77,7 +77,7 @@ class GroqClient:
             return response
             
         except Exception as e:
-            print(f"Error calling Groq API: {str(e)}")
+            print(f"Error calling OpenAI API: {str(e)}")
             return f"Désolé, je n'ai pas pu générer une réponse. Erreur: {str(e)}"
     
     def segment_questions(self, query: str) -> List[str]:
@@ -91,11 +91,33 @@ class GroqClient:
             List of individual questions.
         """
         prompt = """
-        Divise le texte suivant en questions individuelles. 
-        Retourne simplement une liste de questions, une par ligne.
-        Si le texte ne contient qu'une seule question, retourne-la simplement.
-        N'ajoute pas d'explications ou de commentaires supplémentaires.
-        """
+Divise uniquement les phrases contenant plusieurs questions en questions distinctes.
+Ne transforme pas des sujets ou titres en questions. Ne fais pas de brainstorming.
+Retourne une liste de questions, une par ligne. Si le texte contient une seule question, retourne-la telle quelle.
+
+Exemples :
+
+Texte : "Quel est le délai de création d'une SARL et quelles sont les pièces à fournir ?"
+Sortie :
+Quel est le délai de création d'une SARL ?
+Quelles sont les pièces à fournir ?
+
+Texte : "Quels sont les frais pour créer une entreprise individuelle ?"
+Sortie :
+Quels sont les frais pour créer une entreprise individuelle ?
+
+Texte : "Création du SARL et checklist"
+Sortie :
+Création du SARL et checklist
+
+Texte : "Quel est le Délais de la Création Personne physique commerçant et quel sont les Redevances à acquitter pour tout type d'entreprise ?"
+Sortie :
+Quel est le Délais de la Création Personne physique commerçant ?
+Quel sont les Redevances à acquitter pour tout type d'entreprise ?
+
+Texte : """
+
+
         
         messages = [
             {"role": "system", "content": prompt},
@@ -184,9 +206,11 @@ class GroqClient:
             System prompt in the specified language.
         """
         if language == 'ar':
-            return """أنت مساعد قانوني متخصص في قوانين السجل الوطني للمؤسسات (RNE) في تونس.
-            مهمتك هي تقديم معلومات دقيقة ومفيدة بناءً على الوثائق الرسمية للسجل الوطني للمؤسسات.
-            حافظ دائمًا على نبرة احترافية وقدم فقط المعلومات المدعومة بالوثائق الرسمية.
-            إذا كنت لا تعرف الإجابة أو إذا كانت المعلومات غير موجودة في السياق المقدم، فقل ذلك بوضوح."""
+            return """إنت معاون قانوني مختص في قوانين السجل الوطني للمؤسسات (RNE) في تونس.
+    خدمتك إنك تجاوب على الأسئلة وتعطي معلومات صحيحة، مبنية على الوثائق الرسمية متاع السجل.
+    لازمك ديما تحكي مع الناس باللهجة التونسية، بالدارجة، باش تكون أقرب ليهم وأسهل للفهم.
+    حافظ على نبرة محترفة، وما تعطي كان المعلومة اللي مأكدة وموثقة.
+    وإذا المعلومة ما هيش موجودة، ولا ماكش متأكد، قول هذا بكل وضوح."""
+
         else:
             return self.system_prompt

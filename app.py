@@ -24,7 +24,7 @@ from preprocessing.text_processor import TextProcessor
 from retrieval.faiss_retriever import FAISSRetriever
 from retrieval.bm25_retriever import BM25Retriever
 from retrieval.hybrid_retriever import HybridRetriever
-from llm.groq_client import GroqClient
+from llm.openai_client import OpenAIClient
 from utils.language_detector import LanguageDetector
 from utils.response_formatter import ResponseFormatter
 
@@ -37,13 +37,13 @@ data_loader = None
 faiss_retriever = None
 bm25_retriever = None
 hybrid_retriever = None
-groq_client = None
+openai_client = None
 language_detector = None
 text_processor = None
 
 def initialize_components():
     """Initialize all components of the RNE chatbot."""
-    global data_loader, faiss_retriever, bm25_retriever, hybrid_retriever, groq_client, language_detector, text_processor
+    global data_loader, faiss_retriever, bm25_retriever, hybrid_retriever, openai_client, language_detector, text_processor
     
     # Initialize text processor and language detector
     text_processor = TextProcessor()
@@ -76,8 +76,8 @@ def initialize_components():
     # Initialize hybrid retriever
     hybrid_retriever = HybridRetriever(faiss_retriever, bm25_retriever)
     
-    # Initialize Groq client
-    groq_client = GroqClient()
+    # Initialize OpenAI client
+    openai_client = OpenAIClient()
     
     print("All components initialized successfully!")
 
@@ -129,7 +129,7 @@ def process_query(query, language):
         JSON response with generated answer and metadata.
     """
     # Check if query contains multiple questions
-    questions = groq_client.segment_questions(query)
+    questions = openai_client.segment_questions(query)
     
     # If there's only one question, process it directly
     if len(questions) == 1:
@@ -142,7 +142,7 @@ def process_query(query, language):
             return jsonify(ResponseFormatter.format_response(response, query, [], language))
             
         # Generate response
-        answer = groq_client.generate_response(query, results, language)
+        answer = openai_client.generate_response(query, results, language)
         
         # Format response
         formatted_response = ResponseFormatter.format_response(answer, query, results, language)
@@ -160,7 +160,7 @@ def process_query(query, language):
             if not results:
                 answer = get_no_results_response(language)
             else:
-                answer = groq_client.generate_response(question, results, language)
+                answer = openai_client.generate_response(question, results, language)
                 
             # Format individual response
             formatted_response = ResponseFormatter.format_response(answer, question, results, language)
@@ -181,15 +181,16 @@ def get_no_results_response(language):
         """
     else:
         return """
-        لم أتمكن من العثور على معلومات محددة بخصوص سؤالك في وثائق السجل الوطني للمؤسسات.
-        هل يمكنك إعادة صياغة سؤالك أو تقديم المزيد من التفاصيل حول ما تبحث عنه؟
-        
-        يمكنك أيضًا الرجوع مباشرة إلى الموقع الرسمي للسجل الوطني للمؤسسات على العنوان: https://www.registre-entreprises.tn/
+        ما لقيتش معلومات واضحة على سؤالك في وثائق السجل الوطني للمؤسسات.
+        تنجم تعاود تطرح السؤال بطريقة أوضح؟ ولا تعطينا شوية تفاصيل زيادة؟
+
+        تنجم زادة تدخل للموقع الرسمي متاع RNE من هنا: https://www.registre-entreprises.tn/
         """
+
 
 if __name__ == '__main__':
     # Initialize components before starting the server
     initialize_components()
     
     # Start the Flask server
-    app.run(host=HOST, port=PORT, debug=DEBUG)
+    app.run(host='0.0.0.0', port=PORT, debug=DEBUG)
