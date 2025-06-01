@@ -1,18 +1,42 @@
 """
-Integration with OpenAI API for LLM capabilities.
+Enhanced OpenAI integration with vague question detection for RNE chatbot.
 """
 
 import openai
 import json
-from typing import Dict, List, Any, Optional
-
+from typing import Dict, List, Any, Optional, Tuple
+from enum import Enum
 import sys
+import logging
+
+# Import from parent config
 sys.path.append('..')
 from config import OPENAI_API_KEY, LLM_MODEL, SYSTEM_PROMPT, MAX_CONTEXT_LENGTH
 
+class ResponseType(Enum):
+    DIRECT_ANSWER = "direct_answer"
+    CLARIFICATION_NEEDED = "clarification_needed"
+    NO_RESULTS = "no_results"
+
+class FollowUpResponse:
+    """Structure for responses that need clarification."""
+    
+    def __init__(self, main_response: str, follow_up_question: str, options: List[str]):
+        self.main_response = main_response
+        self.follow_up_question = follow_up_question
+        self.options = options
+        self.response_type = ResponseType.CLARIFICATION_NEEDED
+
+class DirectResponse:
+    """Structure for direct answers."""
+    
+    def __init__(self, response: str):
+        self.response = response
+        self.response_type = ResponseType.DIRECT_ANSWER
+
 class OpenAIClient:
     """
-    Client for interacting with OpenAI's LLM API.
+    Enhanced client for interacting with OpenAI's LLM API with vague question detection.
     """
     
     def __init__(self, api_key: str = OPENAI_API_KEY, model: str = LLM_MODEL):
@@ -27,46 +51,229 @@ class OpenAIClient:
         self.model = model
         self.system_prompt = SYSTEM_PROMPT
         
+        # Define common vague question patterns and their clarifications
+        self.clarification_patterns = {
+            'capital': {
+                'keywords': ['capital', 'minimum', 'montant', 'combien'],
+                'main_response': "Le capital minimum dépend du type de société que vous souhaitez créer. Pour vous donner une réponse précise, j'ai besoin de connaître le type de société.",
+                'follow_up': "Quel type de société souhaitez-vous créer ?",
+                'options': [
+                    "SARL (Société à Responsabilité Limitée)",
+                    "SA (Société Anonyme)", 
+                    "EURL (Entreprise Unipersonnelle à Responsabilité Limitée)",
+                    "SUARL (Société Unipersonnelle à Responsabilité Limitée)"
+                ]
+            },
+            'delais': {
+                'keywords': ['délai', 'delais', 'temps', 'durée', 'combien de temps'],
+                'main_response': "Les délais de création varient selon le type d'entreprise et les procédures choisies. Pour vous donner une estimation précise, j'ai besoin de plus d'informations.",
+                'follow_up': "Quel type d'entreprise souhaitez-vous créer ?",
+                'options': [
+                    "Personne physique (commerçant individuel)",
+                    "SARL (Société à Responsabilité Limitée)",
+                    "SA (Société Anonyme)",
+                    "Autre type de société"
+                ]
+            },
+            'documents': {
+                'keywords': ['document', 'pièce', 'papier', 'dossier', 'fournir'],
+                'main_response': "Les documents requis dépendent du type d'entreprise et de la procédure de création choisie. Pour vous fournir la liste exacte, j'ai besoin de connaître votre situation.",
+                'follow_up': "Quel type d'entreprise envisagez-vous de créer ?",
+                'options': [
+                    "Personne physique (commerçant individuel)",
+                    "SARL (Société à Responsabilité Limitée)", 
+                    "SA (Société Anonyme)",
+                    "Association",
+                    "Autre"
+                ]
+            },
+            'cout': {
+                'keywords': ['coût', 'cout', 'prix', 'frais', 'redevance', 'tarif'],
+                'main_response': "Les coûts de création d'entreprise varient selon le type d'entreprise et les services choisis. Pour vous donner un devis précis, j'ai besoin de connaître vos besoins.",
+                'follow_up': "Quel type d'entreprise souhaitez-vous créer ?",
+                'options': [
+                    "Personne physique (commerçant individuel)",
+                    "SARL (Société à Responsabilité Limitée)",
+                    "SA (Société Anonyme)",
+                    "Autre type de société"
+                ]
+            },
+            'creation': {
+                'keywords': ['créer', 'creation', 'comment', 'étapes', 'procédure'],
+                'main_response': "La procédure de création varie selon le type d'entreprise que vous souhaitez établir. Pour vous guider efficacement, j'ai besoin de connaître votre projet.",
+                'follow_up': "Quel type d'entreprise souhaitez-vous créer ?",
+                'options': [
+                    "Personne physique (commerçant individuel)",
+                    "SARL (Société à Responsabilité Limitée)",
+                    "SA (Société Anonyme)",
+                    "Association ou ONG",
+                    "Autre"
+                ]
+            }
+        }
+    
+    def analyze_question_specificity(self, query: str) -> Tuple[bool, Optional[str]]:
+        """
+        Analyze if a question is too vague and needs clarification.
+        
+        Args:
+            query: User query to analyze.
+            
+        Returns:
+            Tuple of (is_vague, clarification_category)
+        """
+        try:
+            if not query or not isinstance(query, str):
+                return False, None
+                
+            query_lower = query.lower()
+            
+            # Check for vague patterns
+            for category, pattern in self.clarification_patterns.items():
+                # Check if query contains keywords from this category
+                if any(keyword in query_lower for keyword in pattern['keywords']):
+                    # Check if the query lacks specificity (no company type mentioned)
+                    company_types = ['sarl', 'sa', 'eurl', 'suarl', 'personne physique', 'association', 'ong']
+                    has_specific_type = any(comp_type in query_lower for comp_type in company_types)
+                    
+                    if not has_specific_type:
+                        logging.info(f"Detected vague question in category: {category}")
+                        return True, category
+            
+            return False, None
+            
+        except Exception as e:
+            logging.error(f"Error in analyze_question_specificity: {str(e)}")
+            return False, None
+    
+    def generate_clarification_response(self, category: str, language: str = 'fr') -> FollowUpResponse:
+        """
+        Generate a clarification response for vague questions.
+        
+        Args:
+            category: Category of vague question.
+            language: Language to respond in.
+            
+        Returns:
+            FollowUpResponse object with clarification details.
+        """
+        if category not in self.clarification_patterns:
+            # Fallback generic clarification
+            if language == 'fr':
+                return FollowUpResponse(
+                    main_response="Votre question nécessite plus de précisions pour que je puisse vous donner une réponse adaptée.",
+                    follow_up_question="Pouvez-vous préciser le type d'entreprise qui vous intéresse ?",
+                    options=[
+                        "Personne physique (commerçant individuel)",
+                        "SARL (Société à Responsabilité Limitée)",
+                        "SA (Société Anonyme)",
+                        "Autre"
+                    ]
+                )
+            else:  # Arabic
+                return FollowUpResponse(
+                    main_response="سؤالك يحتاج لمزيد من التوضيح باش نقدر نعطيك إجابة مناسبة.",
+                    follow_up_question="تنجم توضح نوع الشركة اللي تحب تعملها؟",
+                    options=[
+                        "شخص طبيعي (تاجر فردي)",
+                        "شركة ذات مسؤولية محدودة (SARL)",
+                        "شركة مساهمة (SA)",
+                        "نوع آخر"
+                    ]
+                )
+        
+        pattern = self.clarification_patterns[category]
+        
+        # Handle Arabic language
+        if language == 'ar':
+            # Arabic translations for common patterns
+            arabic_patterns = {
+                'capital': {
+                    'main_response': "رأس المال الأدنى يتوقف على نوع الشركة اللي تحب تعملها. باش نعطيك إجابة دقيقة، نحتاج نعرف نوع الشركة.",
+                    'follow_up': "أشنوا نوع الشركة اللي تحب تعملها؟",
+                    'options': [
+                        "شركة ذات مسؤولية محدودة (SARL)",
+                        "شركة مساهمة (SA)",
+                        "مؤسسة فردية ذات مسؤولية محدودة (EURL)",
+                        "شركة فردية ذات مسؤولية محدودة (SUARL)"
+                    ]
+                },
+                'delais': {
+                    'main_response': "المدة متاع التأسيس تتوقف على نوع الشركة والإجراءات اللي باش تختارها. باش نعطيك تقدير دقيق، نحتاج معلومات زيادة.",
+                    'follow_up': "أشنوا نوع الشركة اللي تحب تعملها؟",
+                    'options': [
+                        "شخص طبيعي (تاجر فردي)",
+                        "شركة ذات مسؤولية محدودة (SARL)",
+                        "شركة مساهمة (SA)",
+                        "نوع آخر من الشركات"
+                    ]
+                }
+                # Add more Arabic translations as needed
+            }
+            
+            if category in arabic_patterns:
+                arabic_pattern = arabic_patterns[category]
+                return FollowUpResponse(
+                    main_response=arabic_pattern['main_response'],
+                    follow_up_question=arabic_pattern['follow_up'],
+                    options=arabic_pattern['options']
+                )
+        
+        return FollowUpResponse(
+            main_response=pattern['main_response'],
+            follow_up_question=pattern['follow_up'],
+            options=pattern['options']
+        )
+    
     def generate_response(
         self, 
         query: str, 
         context: List[Dict[str, Any]], 
         language: str = 'fr',
-        system_prompt: Optional[str] = None
-    ) -> str:
+        system_prompt: Optional[str] = None,
+        force_direct: bool = False
+    ) -> Any:  # Returns either DirectResponse or FollowUpResponse
         """
-        Generate a response using the OpenAI LLM.
+        Generate a response, detecting if clarification is needed first.
         
         Args:
             query: User query.
             context: List of retrieved documents for context.
             language: Language to respond in ('fr' or 'ar').
             system_prompt: Optional custom system prompt.
+            force_direct: If True, skip vague question detection.
             
         Returns:
-            Generated response from the LLM.
+            Either DirectResponse or FollowUpResponse based on query specificity.
         """
-        # Use custom system prompt if provided, otherwise use default
-        if system_prompt:
-            prompt = system_prompt
-        else:
-            prompt = self._get_system_prompt(language)
-            
-        # Format context for the prompt
-        formatted_context = self._format_context(context)
-        
-        # Prepare messages for the chat completion
-        messages = [
-            {"role": "system", "content": prompt},
-            {"role": "user", "content": f"Contexte:\n{formatted_context}\n\nQuestion: {query}"}
-        ]
-        
         try:
+            # Check if question is vague and needs clarification
+            if not force_direct:
+                is_vague, category = self.analyze_question_specificity(query)
+                if is_vague and category:
+                    return self.generate_clarification_response(category, language)
+            
+            # Generate direct response using existing logic
+            # Use custom system prompt if provided, otherwise use default
+            if system_prompt:
+                prompt = system_prompt
+            else:
+                prompt = self._get_system_prompt(language)
+                
+            # Format context for the prompt
+            formatted_context = self._format_context(context)
+            
+            # Prepare messages for the chat completion
+            messages = [
+                {"role": "system", "content": prompt},
+                {"role": "user", "content": f"Contexte:\n{formatted_context}\n\nQuestion: {query}"}
+            ]
+            
             # Call the OpenAI API
             completion = self.client.chat.completions.create(
                 model=self.model,
                 messages=messages,
-                temperature=0.3,  # Low temperature for more deterministic responses
+                temperature=0.3,
                 max_tokens=1024,
                 top_p=0.9,
                 stream=False
@@ -74,11 +281,46 @@ class OpenAIClient:
             
             # Extract and return the response
             response = completion.choices[0].message.content
-            return response
+            return DirectResponse(response)
             
         except Exception as e:
-            print(f"Error calling OpenAI API: {str(e)}")
-            return f"Désolé, je n'ai pas pu générer une réponse. Erreur: {str(e)}"
+            logging.error(f"Error calling OpenAI API: {str(e)}")
+            error_msg = f"Désolé, je n'ai pas pu générer une réponse. Erreur: {str(e)}"
+            if language == 'ar':
+                error_msg = f"آسف، ما نجمتش نولد إجابة. خطأ: {str(e)}"
+            return DirectResponse(error_msg)
+    
+    def handle_follow_up_response(
+        self, 
+        original_query: str, 
+        selected_option: str, 
+        context: List[Dict[str, Any]], 
+        language: str = 'fr'
+    ) -> DirectResponse:
+        """
+        Handle follow-up response after user selects an option.
+        
+        Args:
+            original_query: The original vague question.
+            selected_option: The option selected by the user.
+            context: Retrieved documents for context.
+            language: Language to respond in.
+            
+        Returns:
+            DirectResponse with specific answer.
+        """
+        # Combine original query with selected option for more specific query
+        specific_query = f"{original_query} - {selected_option}"
+        
+        # Generate response with force_direct=True to skip vague detection
+        response = self.generate_response(
+            specific_query, 
+            context, 
+            language, 
+            force_direct=True
+        )
+        
+        return response
     
     def segment_questions(self, query: str) -> List[str]:
         """
@@ -117,8 +359,6 @@ Quel sont les Redevances à acquitter pour tout type d'entreprise ?
 
 Texte : """
 
-
-        
         messages = [
             {"role": "system", "content": prompt},
             {"role": "user", "content": query}
@@ -145,7 +385,7 @@ Texte : """
             return questions
             
         except Exception as e:
-            print(f"Error in question segmentation: {str(e)}")
+            logging.error(f"Error in question segmentation: {str(e)}")
             # On error, just return the original query
             return [query]
     

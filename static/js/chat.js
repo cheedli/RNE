@@ -119,12 +119,44 @@ function sendMessage() {
         // Hide loading indicator
         loadingIndicator.style.display = 'none';
         
-        // Add bot response to UI
-        addMessageToUI('bot', data.response, data.references);
+        if (!data.success) {
+            throw new Error('Backend returned error');
+        }
+        
+        // Handle different response types
+        const responseData = data.response;
+        
+        if (responseData.type === 'direct_answer') {
+            // Simple direct answer
+            addMessageToUI('bot', responseData.response, responseData.references);
+        } else if (responseData.type === 'clarification_needed') {
+            // Handle clarification response
+            let fullResponse = responseData.main_response;
+            
+            // Add follow-up question if present
+            if (responseData.follow_up_question) {
+                fullResponse += '\n\n**' + responseData.follow_up_question + '**';
+            }
+            
+            // Add options if present
+            if (responseData.options && responseData.options.length > 0) {
+                fullResponse += '\n\n';
+                responseData.options.forEach((option, index) => {
+                    fullResponse += `${index + 1}. ${option}\n`;
+                });
+            }
+            
+            addMessageToUI('bot', fullResponse, responseData.references);
+            
+            // Add clickable options if present
+            if (responseData.options && responseData.options.length > 0) {
+                addClickableOptions(responseData.options);
+            }
+        }
         
         // If the response has a different language, update the UI
-        if (data.language && data.language !== currentLanguage) {
-            setLanguage(data.language, false);
+        if (responseData.language && responseData.language !== currentLanguage) {
+            setLanguage(responseData.language, false);
         }
     })
     .catch(error => {
@@ -138,6 +170,40 @@ function sendMessage() {
             
         addMessageToUI('bot', errorMessage);
     });
+}
+
+// Add clickable options to the chat
+function addClickableOptions(options) {
+    const optionsDiv = document.createElement('div');
+    optionsDiv.className = 'message bot-message options-message';
+    
+    const contentDiv = document.createElement('div');
+    contentDiv.className = 'message-content';
+    
+    options.forEach((option, index) => {
+        const optionBtn = document.createElement('button');
+        optionBtn.className = 'btn btn-outline-primary btn-sm option-btn';
+        optionBtn.textContent = option;
+        optionBtn.style.margin = '2px';
+        optionBtn.style.display = 'block';
+        optionBtn.style.width = '100%';
+        optionBtn.style.textAlign = 'left';
+        
+        optionBtn.addEventListener('click', function() {
+            userInput.value = option;
+            sendMessage();
+            // Remove options after selection
+            optionsDiv.remove();
+        });
+        
+        contentDiv.appendChild(optionBtn);
+    });
+    
+    optionsDiv.appendChild(contentDiv);
+    messageContainer.appendChild(optionsDiv);
+    
+    // Scroll to bottom
+    messageContainer.scrollTop = messageContainer.scrollHeight;
 }
 
 // Add message to the UI
