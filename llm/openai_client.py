@@ -66,7 +66,7 @@ class OpenAIClient:
             completion = self.client.chat.completions.create(
                 model=self.model,
                 messages=messages,
-                temperature=0.1,  # Low temperature for more deterministic responses
+                temperature=0.3,  # Low temperature for more deterministic responses
                 max_tokens=1024,
                 top_p=0.9,
                 stream=False
